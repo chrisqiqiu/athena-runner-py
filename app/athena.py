@@ -312,26 +312,26 @@ class AthenaClient(TaskQueue):
     #     # delete the crawler...
     #     self.glue.delete_crawler(Name=crawler_name)
 
-    def get_query_result(self, query):
-        """
-        Returns Pandas DataFrame containing query result if query has completed
-        """
-        self._update_task_status(query)
+    # def get_query_result(self, query):
+    #     """
+    #     Returns Pandas DataFrame containing query result if query has completed
+    #     """
+    #     self._update_task_status(query)
 
-        if query.is_complete:
-            if query.error:
-                raise AthenaClientError(
-                    "Cannot fetch results since query failed")
-            else:
-                filepath = os.path.join(
-                    query.arguments["output_location"], "{}.csv".format(query.id))
-                logger.info("Fetching results from {}".format(filepath))
-                csv = CSVHandler()
-                df = csv.load_df(filepath)
-                return df
-        else:
-            raise AthenaClientError(
-                "Cannot fetch results since query hasn't completed")
+    #     if query.is_complete:
+    #         if query.error:
+    #             raise AthenaClientError(
+    #                 "Cannot fetch results since query failed")
+    #         else:
+    #             filepath = os.path.join(
+    #                 query.arguments["output_location"], "{}.csv".format(query.id))
+    #             logger.info("Fetching results from {}".format(filepath))
+    #             csv = CSVHandler()
+    #             df = csv.load_df(filepath)
+    #             return df
+    #     else:
+    #         raise AthenaClientError(
+    #             "Cannot fetch results since query hasn't completed")
 
     def _stop_all_active_tasks(self):
         """

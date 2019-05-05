@@ -82,7 +82,7 @@ class TaskQueue:
                     logger.error("Task failed: ID {0}, error is {1}".format(
                         task.id, task.error))
                 else:
-                    logger.debug("Task is complete: ID {0}".format(task.id))
+                    logger.debug("Task is completed: ID {0}".format(task.id))
                 self.active_queue.pop(index)
 
     def _running_jobs(self, job_name):
