@@ -2,9 +2,9 @@ from dotenv import load_dotenv
 import os
 from s3 import S3
 import lib.file_operator as fo
-from lib.log import setup_logger
-from lib.notification import SlackNotification
-from config import Config
+from .lib.log import setup_logger
+from .lib.notification import SlackNotification
+from .config import Config
 from appnexus_api import AppnexusApi
 from functools import partial
 

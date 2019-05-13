@@ -1,7 +1,9 @@
-from lib.log import setup_logger
-from lib.notification import SlackNotification
+from .lib.log import setup_logger
+from .lib.notification import SlackNotification
 import time
 import queue
+from .task import Task
+import datetime
 
 logger = setup_logger(__name__)
 
@@ -13,20 +15,6 @@ class RetryException(Exception):
         self.reason = reason
 
 
-class Task:
-    """
-    An abstraction representing a Single task
-    """
-
-    def __init__(self, name, arguments):
-        self.is_complete = False
-        self.error = None
-        self.arguments = arguments
-        self.id = None
-        self.retries = 0
-        self.name = name
-
-
 class TaskQueue:
     """
     This is an abstract class that contains all required common functionality to
@@ -34,7 +22,7 @@ class TaskQueue:
     Two separate queues are maintained:
     active_queue - Only tasks in this queue are allowed to run.
                    Once tasks are completed they are removed from this queue.
-                   No of tasks in active queue <= max_size.
+                   No. of tasks in active queue <= max_size.
     pending_queue - Contains tasks that are awaiting execution.
                     Tasks from pending_queue are added to active_queue in FIFO
                     fashion.
@@ -46,6 +34,7 @@ class TaskQueue:
         self.max_size = max_size
         self.retry_limit = retry_limit
         self.max_tasks_same_name = max_tasks_same_name
+        self.timeout = 600
 
     def add_task(self, name, args):
         """This method adds a tasks to the pending_tasks queue"""
@@ -121,9 +110,15 @@ class TaskQueue:
         """
         This method runs until execution of all tasks is completed
         """
+
+        start_time = datetime.datetime.now()
+
         while len(self.active_queue):
             logger.info("{} tasks are awaiting exection".format(
                 self.number_active))
+            if (datetime.datetime.now() - start_time).total_seconds() > self.timeout:
+                raise Exception("Timeout exception. The API call to retreive report execution status took longer than {} seconds".format(
+                    str(self.timeout)))
             self._empty_active_queue()
             self._fill_active_queue()
             time.sleep(10)
