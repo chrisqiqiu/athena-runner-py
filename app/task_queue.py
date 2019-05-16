@@ -1,11 +1,12 @@
-from .lib.log import setup_logger
-from .lib.notification import SlackNotification
+from lib.log import setup_logger
+from lib.notification import SlackNotification
 import time
 import queue
-from .task import Task
+from task import Task
 import datetime
 
 logger = setup_logger(__name__)
+slackbot = SlackNotification(__name__)
 
 
 class RetryException(Exception):
@@ -28,13 +29,15 @@ class TaskQueue:
                     fashion.
     """
 
-    def __init__(self, max_size, retry_limit=3, max_tasks_same_name=1024):
+    def __init__(self, max_size, retry_limit=3, timeout_minutes=10, sleep_seconds=10 max_tasks_same_name=1024):
         self.pending_tasks = queue.Queue()
         self.active_queue = []
         self.max_size = max_size
         self.retry_limit = retry_limit
         self.max_tasks_same_name = max_tasks_same_name
-        self.timeout = 600
+        self.timeout_minutes = timeout_minutes
+        self.timeout_seconds = timeout_minutes*60
+        self.sleep_seconds = sleep_seconds
 
     def add_task(self, name, args):
         """This method adds a tasks to the pending_tasks queue"""
@@ -92,6 +95,10 @@ class TaskQueue:
     def number_pending(self):
         return self.pending_tasks.qsize()
 
+    @property
+    def remaining_queries(self):
+        return self.pending_tasks.qsize()+len(self.active_queue)
+
     def _fill_active_queue(self):
         # Add add tasks to active queue if size of queue is less the max query limit
         for i in range(0, self.max_size - self.number_active):
@@ -114,14 +121,19 @@ class TaskQueue:
         start_time = datetime.datetime.now()
 
         while len(self.active_queue):
-            logger.info("{} tasks are awaiting exection".format(
+            logger.info("{} active tasks are awaiting exection".format(
                 self.number_active))
-            if (datetime.datetime.now() - start_time).total_seconds() > self.timeout:
-                raise Exception("Timeout exception. The API call to retreive report execution status took longer than {} seconds".format(
-                    str(self.timeout)))
+            logger.info(f" ^ queries remaining {self.remaining_queries}")
+            if (datetime.datetime.now() - start_time).total_seconds() > self.timeout_seconds:
+                msg = "Timeout. Execution took longer than {} minutes".format(
+                    str(self.timeout_minutes))
+                logger.info(msg)
+                slackbot.warn(msg)
             self._empty_active_queue()
             self._fill_active_queue()
-            time.sleep(10)
+            msg = f" ~ sleeping for {str(self.sleep_seconds)}"
+            logger.info(msg)
+            time.sleep(self.sleep_seconds)
 
     def _trigger_task(self, task):
         """

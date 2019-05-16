@@ -60,16 +60,20 @@ class S3(object):
             self._logger.info("Successfully get {} from S3".format(key))
         return key
 
-    def move_to_archive(self, key):
-        """Move file from bucket/prefix/latest/xxx.csv to bucket/prefix/archive/xxx.csv"""
-        copy_source = {'Bucket': self.bucket, 'Key': "{}/{}".format(
-            self.prefix, key) if self.prefix else key}
-        self._s3.copy_object(CopySource=copy_source, Bucket=self.bucket, Key="{}/archive/{}".format(
-            "/".join(self.prefix.split("/")[:-1]) if len(self.prefix.split("/")) > 1 else self.prefix, key) if self.prefix and self.prefix != 'latest' else "archive/{}".format(key))
-        self._s3.delete_object(
-            Bucket=self.bucket, Key="{}/{}".format(self.prefix, key) if self.prefix else key)
-        self._logger.info(
-            "Successfully archived {} in source S3 bucket".format(key))
+    def put(self, local_path, key):
+        """Upload local_path to s3: // bucket/key and print upload progress."""
+        try:
+
+            self._s3_wormhole.upload_file(filename=local_path,
+                                          bucket=self.bucket,
+                                          key="{}/{}".format(self.prefix,
+                                                             key) if self.prefix else key,
+                                          callback=ProgressPercentage(local_path))
+        except Exception as e:
+            self._logger.info(
+                "Could not upload {} to S3 due to {}".format(key, e))
+        else:
+            self._logger.info("Successfully uploaded {} to S3".format(key))
 
     def list_objects(self):
         """Get a list of all keys in an S3 bucket."""

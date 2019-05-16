@@ -1,9 +1,9 @@
-CONTAINER = appnexus-api
+CONTAINER = athena-runner-py
 OUT_DIR = temp
 BUILD_DIR = build
 KEY_DIR = keys
 REGISTRY = docker-registry.mi9cdn.com:5000
-ECR_REGISTRY = 462463595486.dkr.ecr.ap-southeast-2.amazonaws.com/appnexus-api
+ECR_REGISTRY = 462463595486.dkr.ecr.ap-southeast-2.amazonaws.com/athena-runner-py
 
 PWD = $(shell pwd)
 APP_IMAGE = $(REGISTRY)/$(CONTAINER)

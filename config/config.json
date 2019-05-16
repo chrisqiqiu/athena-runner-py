@@ -1,6 +1,0 @@
-{
-    "src_s3_bucket": "mi9-test-bucket-1",
-    "src_s3_prefix": "appnexus-batch-segment-upload/latest",
-    "archive": true,
-    "files_each_chunk": 5
-}

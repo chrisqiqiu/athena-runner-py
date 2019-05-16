@@ -14,3 +14,5 @@ class Task:
         self.id = None
         self.retries = 0
         self.name = name
+        self.control_date_job = None
+        self.control_hour_job = None

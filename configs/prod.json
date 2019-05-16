@@ -1,0 +1,18 @@
+{
+    "database": "default",
+    "resultsLocation": "s3://athena-runner-ap-southeast-2-test/product-video-audience/results/",
+    "encryptQueryResults": "false",
+    "encryptionType": "",
+    "encryptionKey": "",
+    "controlBucket": "athena-runner-ap-southeast-2-test",
+    "controlKey": "product-video-audience/control.json",
+    "queryBucket": "athena-runner-ap-southeast-2",
+    "queryKey": "product-video-audience/query.sql",
+    "maxQueries": "4",
+    "controlDays": "-1",
+    "appendHours": "false",
+    "timeoutMinutes": "55",
+    "sleepSeconds": "10",
+    "dropTableName": "",
+    "parquet": ""
+}

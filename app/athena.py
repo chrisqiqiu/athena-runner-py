@@ -3,11 +3,11 @@ import logging
 import time
 import os
 import re
-from .task_queue import TaskQueue, RetryException
+from task_queue import TaskQueue, RetryException
 from awsretry import AWSRetry
 
-from .lib.log import setup_logger
-from .lib.notification import SlackNotification
+from lib.log import setup_logger
+from lib.notification import SlackNotification
 
 logger = setup_logger(__name__)
 
@@ -29,23 +29,23 @@ class AthenaClient(TaskQueue):
     and run queries against these tables.
     """
 
-    def __init__(self, region, db, max_queries=3, max_retries=3, s3_parquet=None):
+    def __init__(self, region='ap-southeast-2', db='default', max_queries=3, max_retries=3, timeout_minutes=10,
+                 sleep_seconds=10, s3_parquet=None):
         """
         Create an AthenaClient
         :param region the AWS region to create the object, e.g. us-east-2
-        :param db the Glue database to use
         :param max_queries the maximum number of queries to run at any one time, defaults to three
         :type max_queries int
         :param max_retries the maximum number of times execution of the query will be retried on failure
         :type max_retries int
         """
         self.athena = boto3.client(service_name='athena', region_name=region)
-        self.glue = boto3.client(service_name='glue', region_name=region)
+
         self.db_name = db
-        self.aws_region = region
         self.scp = s3_parquet
 
-        super(AthenaClient, self).__init__(max_queries, max_retries)
+        super(AthenaClient, self).__init__(
+            max_queries, max_retries, timeout_minutes, sleep_seconds)
 
     def __del__(self):
         """
@@ -62,8 +62,14 @@ class AthenaClient(TaskQueue):
 
         logger.debug("...checking status of query {0} to {1}".format(
             task.name, task.arguments["output_location"]))
-        status = self.athena.get_query_execution(QueryExecutionId=task.id)[
-            "QueryExecution"]["Status"]
+        execution_result = self.athena.get_query_execution(
+            QueryExecutionId=task.id)["QueryExecution"]
+        status = execution_result["Status"]
+        statistics = execution_result["Statistics"]
+        task.control_hour_job['state'] = status["State"]
+        task.control_hour_job['startTime'] = status["SubmissionDateTime"]
+        task.control_hour_job['dataScannedInBytes'] = statistics["DataScannedInBytes"]
+        task.control_hour_job['runTimeInMillis'] = statistics['EngineExecutionTimeInMillis']
 
         if status["State"] == "RUNNING":
             task.is_complete = False
@@ -85,18 +91,39 @@ class AthenaClient(TaskQueue):
         """
         Runs a query in Athena
         """
-
         logger.info("Starting query {0} to {1}".format(
             task.name, task.arguments["output_location"]))
+        if task.arguments['encryptQueryResults']:
+            logger.info("Running encryption..")
 
-        task.id = self.athena.start_query_execution(
-            QueryString=task.arguments["sql"],
-            QueryExecutionContext={'Database': self.db_name},
-            ResultConfiguration={
-                'OutputLocation': task.arguments["output_location"]}
-        )["QueryExecutionId"]
+            task.id = self.athena.start_query_execution(
+                QueryString=task.arguments["sql"],
+                QueryExecutionContext={'Database': self.db_name},
+                ResultConfiguration={
+                    'OutputLocation': task.arguments["output_location"],
+                    'EncryptionConfiguration': {
+                        # 'SSE_S3'|'SSE_KMS'|'CSE_KMS'
+                        'EncryptionOption': task.arguments['encryptionType'],
+                        'KmsKey': task.arguments['encryptionKey']
+                    }
+                },
+                WorkGroup=task.arguments['workgroup']
+            )["QueryExecutionId"]
 
-    def add_query(self, sql, name, output_location, parquet=False):
+            task.control_hour_job['queryid'] = task.id
+        else:
+            task.id = self.athena.start_query_execution(
+                QueryString=task.arguments["sql"],
+                QueryExecutionContext={'Database': self.db_name},
+                ResultConfiguration={
+                    'OutputLocation': task.arguments["output_location"]},
+                WorkGroup=task.arguments['workgroup']
+
+            )["QueryExecutionId"]
+
+            task.control_hour_job['queryid'] = task.id
+
+    def add_query(self, sql, name, output_location, encryptQueryResults=False, encryptionType="", encryptionKey="", dropTableName=False, parquet=False):
         """
         Adds a query to Athena. Respects the maximum number of queries specified when the module was created.
         Retries queries when they fail so only use when you are sure your syntax is correct!
@@ -112,10 +139,20 @@ class AthenaClient(TaskQueue):
         #     raise AthenaClientError(
         #         "Cannot output in Parquet without a S3Csv2Parquet object")
 
+        if dropTableName:
+            self.add_task(name=name,
+                          args={"sql": f"DROP TABLE {dropTableName}",
+                                "output_location": output_location,
+                                "parquet": parquet})
+
         query = self.add_task(name=name,
                               args={"sql": sql,
                                     "output_location": output_location,
-                                    "parquet": parquet})
+                                    "parquet": parquet,
+                                    "encryptQueryResults": encryptQueryResults,
+                                    "encryptionType": encryptionType,
+                                    "encryptionKey": encryptionKey
+                                    })
 
         return query
 
@@ -133,12 +170,6 @@ class AthenaClient(TaskQueue):
             raise e
         finally:
             self.stop_and_delete_all_tasks()
-
-    def _db_exists(self):
-        for database in self.glue.get_databases(MaxResults=1000)["DatabaseList"]:
-            if database["Name"] == self.db_name:
-                return True
-        return False
 
     @staticmethod
     def _get_table_name(s3_target):

@@ -1,6 +1,6 @@
 import json
 import os
-from .lib.log import setup_logger
+from lib.log import setup_logger
 
 
 class Config(object):
