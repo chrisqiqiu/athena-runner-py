@@ -13,6 +13,8 @@
     "appendHours": "false",
     "timeoutMinutes": "55",
     "sleepSeconds": "10",
+    "workgroup": "primary",
     "dropTableName": "",
-    "parquet": ""
+    "parquet": "",
+    "partitioned_by": ""
 }

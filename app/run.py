@@ -63,32 +63,44 @@ def main():
 
     # create athena client with config
     athena = AthenaClient(db=data['database'], max_queries=data['maxQueries'],
-                          timeout_minutes=data['timeoutMinutes'], sleep_seconds=data['sleepSeconds'], s3_parquet=data['parquet'])
+                          timeout_minutes=data['timeoutMinutes'], sleep_seconds=data['sleepSeconds'], workgroup=data['workgroup'], s3=s3, s3_parquet=data['parquet'])
 
-    add_task_with_client = partial(add_task, athena)
-    add_task_with_client_config = partial(add_task_with_client, data)
+    add_query_with_client = partial(add_query, athena)
+    add_query_with_client_config = partial(add_query_with_client, data)
 
-    list(map(add_task_with_client_config, hour_jobs_to_process))
+    list(map(add_query_with_client_config, hour_jobs_to_process))
 
     athena.wait_for_completion()
 
     # write_control(json.dumps(hour_jobs_to_process, indent=4))
 
 
-def add_task(athena, data, hour_job):
+def add_query(athena, data, hour_job):
     name = data['controlKey'].split("/")[0]
     date_string = hour_job[0]
     control_hour_job = hour_job[1]
     hour_string = str(control_hour_job["hour"])
 
+    control_hour_job["workgroup"] = data.get("workgroup")
+
     sql = get_query_from_s3(data['queryBucket'], data['queryKey'])
 
     sql = sql.replace("<date>", date_string).replace("<hour>", hour_string)
 
-    output_location = f"""{data['resultsLocation']}/{date_string.split("-")[0]}/{date_string.split("-")[1]}/{date_string.split("-")[2]}"""
+    output_location = f"""{data['resultsLocation']}/{date_string.split("-")[0]}/{date_string.split("-")[1]}/{date_string.split("-")[2]}/{hour_string.zfill(2)}"""
 
-    athena.add_query(sql, name, output_location,
-                     data["encryptQueryResults"], data["encryptionType"], data["encryptionKey"], data["dropTableName"], data["parquet"])
+    args = {"sql": sql,
+            "output_location": output_location,
+            "hour_job": control_hour_job,
+            "date_string": date_string,
+            "parquet": data.get('parquet'),
+            "dropTableName": data.get("dropTableName"),
+            "encryptQueryResults": data.get("encryptQueryResults"),
+            "encryptionType": data.get("encryptionType"),
+            "encryptionKey": data.get("encryptionKey")
+            }
+
+    athena.add_query(name, args)
 
 
 def pretty_print(d):

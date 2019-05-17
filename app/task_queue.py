@@ -29,19 +29,19 @@ class TaskQueue:
                     fashion.
     """
 
-    def __init__(self, max_size, retry_limit=3, timeout_minutes=10, sleep_seconds=10 max_tasks_same_name=1024):
+    def __init__(self, max_size, retry_limit=3, timeout_minutes=10, sleep_seconds=10):
         self.pending_tasks = queue.Queue()
         self.active_queue = []
         self.max_size = max_size
         self.retry_limit = retry_limit
-        self.max_tasks_same_name = max_tasks_same_name
+        # self.max_tasks_same_name = max_tasks_same_name
         self.timeout_minutes = timeout_minutes
         self.timeout_seconds = timeout_minutes*60
         self.sleep_seconds = sleep_seconds
 
-    def add_task(self, name, args):
+    def add_task(self, name, priority, args):
         """This method adds a tasks to the pending_tasks queue"""
-        task = Task(name, args)
+        task = Task(name, priority, args)
         self.pending_tasks.put(task)
         # self._empty_active_queue()
         # self._fill_active_queue()
@@ -53,6 +53,7 @@ class TaskQueue:
         Removes completed task from active queue and populates freed spots with tasks
         in the front of pending_tasks queue
         """
+        print("[Athena Runner Step 4.1/5] check queries status... ")
         # Remove completed tasks from active queue
         for index, task in enumerate(self.active_queue):
             self._update_task_status(task)
@@ -99,12 +100,18 @@ class TaskQueue:
     def remaining_queries(self):
         return self.pending_tasks.qsize()+len(self.active_queue)
 
+    @property
+    def max_priority_in_active_queue(self):
+        return max(list(map(lambda task: task.priority, self.active_queue)))
+
     def _fill_active_queue(self):
+
+        print("[Athena Runner Step 4.2/5] execute queries... ")
         # Add add tasks to active queue if size of queue is less the max query limit
         for i in range(0, self.max_size - self.number_active):
             if not(self.pending_tasks.empty()):
                 task = self.pending_tasks.get()
-                if self._running_jobs(task.name) < self.max_tasks_same_name:
+                if task.priority >= self.max_priority_in_active_queue:
                     self.active_queue.append(task)
                     self._trigger_task(task)
                 else:

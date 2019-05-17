@@ -30,7 +30,7 @@ class AthenaClient(TaskQueue):
     """
 
     def __init__(self, region='ap-southeast-2', db='default', max_queries=3, max_retries=3, timeout_minutes=10,
-                 sleep_seconds=10, s3_parquet=None):
+                 sleep_seconds=10, workgroup='primary', s3=None, s3_parquet=None):
         """
         Create an AthenaClient
         :param region the AWS region to create the object, e.g. us-east-2
@@ -42,6 +42,8 @@ class AthenaClient(TaskQueue):
         self.athena = boto3.client(service_name='athena', region_name=region)
 
         self.db_name = db
+        self.workgroup = workgroup
+        self.s3 = s3
         self.scp = s3_parquet
 
         super(AthenaClient, self).__init__(
@@ -66,10 +68,14 @@ class AthenaClient(TaskQueue):
             QueryExecutionId=task.id)["QueryExecution"]
         status = execution_result["Status"]
         statistics = execution_result["Statistics"]
-        task.control_hour_job['state'] = status["State"]
-        task.control_hour_job['startTime'] = status["SubmissionDateTime"]
-        task.control_hour_job['dataScannedInBytes'] = statistics["DataScannedInBytes"]
-        task.control_hour_job['runTimeInMillis'] = statistics['EngineExecutionTimeInMillis']
+
+        logger.info(
+            f"                          -> Date: {task.arguments['date_string']}, Hour: {str(task.arguments['hour_job']['hour']).zfill(2)}, Id: {task.id}, State: {task.arguments['hour_job']['state']}  -> {status['State']}, Scanned Data: {statistics['DataScannedInBytes']}, Run Time: {statistics['EngineExecutionTimeInMillis']}, Start Time: {status['SubmissionDateTime']}  ")
+
+        task.arguments['hour_job']['state'] = status["State"]
+        task.arguments['hour_job']['startTime'] = status["SubmissionDateTime"]
+        task.arguments['hour_job']['dataScannedInBytes'] = statistics["DataScannedInBytes"]
+        task.arguments['hour_job']['runTimeInMillis'] = statistics['EngineExecutionTimeInMillis']
 
         if status["State"] == "RUNNING":
             task.is_complete = False
@@ -93,6 +99,7 @@ class AthenaClient(TaskQueue):
         """
         logger.info("Starting query {0} to {1}".format(
             task.name, task.arguments["output_location"]))
+
         if task.arguments['encryptQueryResults']:
             logger.info("Running encryption..")
 
@@ -107,31 +114,26 @@ class AthenaClient(TaskQueue):
                         'KmsKey': task.arguments['encryptionKey']
                     }
                 },
-                WorkGroup=task.arguments['workgroup']
-            )["QueryExecutionId"]
+                WorkGroup=self.workgroup)["QueryExecutionId"]
 
-            task.control_hour_job['queryid'] = task.id
+            task.arguments['hour_job']['queryid'] = task.id
         else:
             task.id = self.athena.start_query_execution(
                 QueryString=task.arguments["sql"],
                 QueryExecutionContext={'Database': self.db_name},
                 ResultConfiguration={
                     'OutputLocation': task.arguments["output_location"]},
-                WorkGroup=task.arguments['workgroup']
+                WorkGroup=self.workgroup)["QueryExecutionId"]
 
-            )["QueryExecutionId"]
+            task.arguments['hour_job']['queryid'] = task.id
 
-            task.control_hour_job['queryid'] = task.id
-
-    def add_query(self, sql, name, output_location, encryptQueryResults=False, encryptionType="", encryptionKey="", dropTableName=False, parquet=False):
+    def add_query(self, name, args):
         """
         Adds a query to Athena. Respects the maximum number of queries specified when the module was created.
         Retries queries when they fail so only use when you are sure your syntax is correct!
         Returns a query object
-        :param sql: the SQL query to run
         :param name: the name which will be logged when running this query
-        :param output_location: the S3 prefix where you want the results stored
-        :param parquet: whether to compress to parquet when finished
+        :param args: a dict contains all the task related info needed to pass in
         :return:
         """
 
@@ -139,20 +141,24 @@ class AthenaClient(TaskQueue):
         #     raise AthenaClientError(
         #         "Cannot output in Parquet without a S3Csv2Parquet object")
 
-        if dropTableName:
+        if args['dropTableName']:
             self.add_task(name=name,
-                          args={"sql": f"DROP TABLE {dropTableName}",
-                                "output_location": output_location,
-                                "parquet": parquet})
+                          priority=0,
+                          args={"sql": f"DROP TABLE IF EXISTS {args['dropTableName']}",
+                                "output_location": "s3://aws-athena-query-results-462463595486-ap-southeast-2"})
+
+            # need clean up the files in the destination if outputing in the same path
+
+            self.s3.prefix = "/".join(
+                args["output_location"].replace("s3://", "").split("/")[1:-1])
+            files = list(self.s3.list_objects())
+            for f in files:
+                self.s3.delete(f)
+            self.s3.prefix = None
 
         query = self.add_task(name=name,
-                              args={"sql": sql,
-                                    "output_location": output_location,
-                                    "parquet": parquet,
-                                    "encryptQueryResults": encryptQueryResults,
-                                    "encryptionType": encryptionType,
-                                    "encryptionKey": encryptionKey
-                                    })
+                              priority=1,
+                              args=args)
 
         return query
 

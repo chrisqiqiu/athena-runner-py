@@ -81,16 +81,26 @@ class S3(object):
         kwargs = {'Bucket': self.bucket, 'Prefix': self.prefix}
         while True:
             resp = self._s3.list_objects_v2(**kwargs)
-            for obj in resp['Contents']:
-                if obj['Key'][-1] == "/":
-                    continue
-                keys.add(obj['Key'])
+
+            try:
+                for obj in resp['Contents']:
+                    if obj['Key'][-1] == "/":
+                        continue
+                    keys.add(obj['Key'])
+            except KeyError:
+                return keys
 
             try:
                 kwargs['ContinuationToken'] = resp['NextContinuationToken']
             except KeyError:
                 break
         return keys
+
+    def delete(self,  key):
+        self._logger.info("Deleting s3://{bucket}/{key}")
+        self._s3.delete_object(
+            Bucket=self.bucket, Key=key)
+        self._logger.info("Successfully deleted s3://{bucket}/{key}")
 
 
 class ProgressPercentage(object):
