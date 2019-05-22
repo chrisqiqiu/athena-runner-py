@@ -4,6 +4,7 @@ from lib.notification import SlackNotification
 import datetime
 
 import json
+logger = setup_logger(__name__)
 
 
 class ControlData:
@@ -31,7 +32,7 @@ class ControlData:
             self.now.month).zfill(2), str(self.now.day), [new_hour_job])
 
         if self.control_dict is None or self.control_dict.get("datelist") is None or len(self.control_dict["datelist"]) == 0:
-            print(
+            logger.info(
                 "control dict does not exist or date list in control dict does not exist or empty")
 
             self.date_list = [new_day_job]
@@ -55,7 +56,7 @@ class ControlData:
 
     def _append_control_date_with_control_enable_config(self):
         if not self.config_data.get("controlDays"):
-            print("Control Days not configured.")
+            logger.info("Control Days not configured.")
             # self.slackBot.warn("Control Days not configured."  )
             return
 
@@ -64,12 +65,12 @@ class ControlData:
 
         # if the date list is empty , construct one automatically based on appendHours config
         if self.control_dict is None or self.control_dict.get("datelist") is None or len(self.control_dict["datelist"]) == 0:
-            print(
+            logger.info(
                 "Control enable branch: control dict does not exist or date list in control dict does not exist or empty ")
             date_to_add = self.today + \
-                datetime.timedelta(days=self.config_data["controlDays"])
+                datetime.timedelta(days=int(self.config_data["controlDays"]))
 
-            self.date_list = [self._day_job_dict(str(date_to_add.year), str(date_to_add.month).zfill(2), str(date_to_add.day), new_hour_jobs if self.config_data['appendHours'] else [new_hour_job])
+            self.date_list = [self._day_job_dict(str(date_to_add.year), str(date_to_add.month).zfill(2), str(date_to_add.day), new_hour_jobs if self.config_data['appendHours'] and self.config_data['appendHours'] != "false" else [new_hour_job])
                               ]
         # else read in the existing date list, grab the last one and grow the list from it until it hits (today - controlDays) in config
         else:
@@ -84,7 +85,7 @@ class ControlData:
                 last_control_date = last_control_date + \
                     datetime.timedelta(days=1)
                 self.date_list.append(self._day_job_dict(str(last_control_date.year), str(last_control_date.month).zfill(
-                    2), str(last_control_date.day), new_hour_jobs if self.config_data['appendHours'] else [new_hour_job]))
+                    2), str(last_control_date.day), new_hour_jobs if self.config_data['appendHours'] and self.config_data['appendHours'] != "false" else [new_hour_job]))
 
     def _hour_job_dict(self, hour):
         return {"hour": hour,
@@ -93,7 +94,7 @@ class ControlData:
                 "dataScannedInBytes": None,
                 "runTimeInMillis": None,
                 "startTime": None,
-                "workGroup": None
+                "workgroup": None
                 }
 
     def _day_job_dict(self, year, month, day, hourlist):

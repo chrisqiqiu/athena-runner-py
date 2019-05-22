@@ -6,15 +6,14 @@
     "encryptionKey": "",
     "controlBucket": "athena-runner-ap-southeast-2-test",
     "controlKey": "product-video-audience/control.json",
-    "queryBucket": "athena-runner-ap-southeast-2",
+    "queryBucket": "athena-runner-ap-southeast-2-test",
     "queryKey": "product-video-audience/query.sql",
     "maxQueries": "4",
     "controlDays": "-1",
-    "appendHours": "false",
+    "appendHours": "true",
     "timeoutMinutes": "55",
-    "sleepSeconds": "10",
+    "sleepSeconds": "1",
     "workgroup": "primary",
-    "dropTableName": "",
-    "parquet": "",
-    "partitioned_by": ""
+    "dropTableName": "temp.parquet_product_video_audience",
+    "parquet": "true"
 }

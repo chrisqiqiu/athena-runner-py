@@ -4,6 +4,7 @@ import time
 import os
 import re
 from task_queue import TaskQueue, RetryException
+from s3 import S3
 from awsretry import AWSRetry
 
 from lib.log import setup_logger
@@ -30,7 +31,7 @@ class AthenaClient(TaskQueue):
     """
 
     def __init__(self, region='ap-southeast-2', db='default', max_queries=3, max_retries=3, timeout_minutes=10,
-                 sleep_seconds=10, workgroup='primary', s3=None, s3_parquet=None):
+                 sleep_seconds=10, workgroup='primary', control_s3=None, control_key=None, parquet=None, control_data=None):
         """
         Create an AthenaClient
         :param region the AWS region to create the object, e.g. us-east-2
@@ -40,11 +41,13 @@ class AthenaClient(TaskQueue):
         :type max_retries int
         """
         self.athena = boto3.client(service_name='athena', region_name=region)
-
         self.db_name = db
         self.workgroup = workgroup
-        self.s3 = s3
-        self.scp = s3_parquet
+        self.control_s3 = control_s3
+        self.control_key = control_key
+        self.parquet = parquet
+        self.control_data = control_data
+        # self.interleaved_priority = False
 
         super(AthenaClient, self).__init__(
             max_queries, max_retries, timeout_minutes, sleep_seconds)
@@ -69,29 +72,38 @@ class AthenaClient(TaskQueue):
         status = execution_result["Status"]
         statistics = execution_result["Statistics"]
 
-        logger.info(
-            f"                          -> Date: {task.arguments['date_string']}, Hour: {str(task.arguments['hour_job']['hour']).zfill(2)}, Id: {task.id}, State: {task.arguments['hour_job']['state']}  -> {status['State']}, Scanned Data: {statistics['DataScannedInBytes']}, Run Time: {statistics['EngineExecutionTimeInMillis']}, Start Time: {status['SubmissionDateTime']}  ")
+        if task.arguments.get('hour_job'):
+            logger.info(
+                f"                          -> Date: {task.arguments['date_string']}, Hour: {str(task.arguments['hour_job']['hour']).zfill(2)}, Id: {task.id}, State: {task.arguments['hour_job']['state']}  -> {status['State']}, Scanned Data: {statistics.get('DataScannedInBytes' )}, Run Time: {statistics.get('EngineExecutionTimeInMillis')}, Start Time: {status['SubmissionDateTime']}  ")
 
-        task.arguments['hour_job']['state'] = status["State"]
-        task.arguments['hour_job']['startTime'] = status["SubmissionDateTime"]
-        task.arguments['hour_job']['dataScannedInBytes'] = statistics["DataScannedInBytes"]
-        task.arguments['hour_job']['runTimeInMillis'] = statistics['EngineExecutionTimeInMillis']
+            task.arguments['hour_job']['state'] = status["State"]
+            task.arguments['hour_job']['startTime'] = str(
+                status["SubmissionDateTime"])
+            task.arguments['hour_job']['dataScannedInBytes'] = statistics.get(
+                "DataScannedInBytes")
+            task.arguments['hour_job']['runTimeInMillis'] = statistics.get(
+                'EngineExecutionTimeInMillis')
+        else:
+            logger.info(
+                f"""Running drop table query {task.arguments['sql']}""")
 
         if status["State"] == "RUNNING":
             task.is_complete = False
         elif status["State"] == "SUCCEEDED":
             task.is_complete = True
-            if task.arguments["parquet"]:
-                logger.info("starting conversion to")
-                # self.scp.convert("{0}{1}.csv".format(task.arguments["output_location"],
-                #                                      task.id),
-                #                  delete_csv=True,
-                #                  name="convert {0}".format(task.name))
+            # refresh and persist control dict object
+            self._write_control()
         else:
             if "StateChangeReason" in status:
                 task.error = status["StateChangeReason"]
             else:
                 task.error = status["State"]
+
+    def _write_control(self):
+        with open("control_output.json", "w") as f:
+            f.write(str(self.control_data))
+
+        self.control_s3.put("control_output.json", self.control_key)
 
     def _trigger_task(self, task):
         """
@@ -100,7 +112,7 @@ class AthenaClient(TaskQueue):
         logger.info("Starting query {0} to {1}".format(
             task.name, task.arguments["output_location"]))
 
-        if task.arguments['encryptQueryResults']:
+        if task.arguments.get('encryptQueryResults') and task.arguments['encryptQueryResults'].lower() != "false":
             logger.info("Running encryption..")
 
             task.id = self.athena.start_query_execution(
@@ -116,7 +128,8 @@ class AthenaClient(TaskQueue):
                 },
                 WorkGroup=self.workgroup)["QueryExecutionId"]
 
-            task.arguments['hour_job']['queryid'] = task.id
+            if task.arguments.get('hour_job'):
+                task.arguments['hour_job']['queryid'] = task.id
         else:
             task.id = self.athena.start_query_execution(
                 QueryString=task.arguments["sql"],
@@ -125,42 +138,87 @@ class AthenaClient(TaskQueue):
                     'OutputLocation': task.arguments["output_location"]},
                 WorkGroup=self.workgroup)["QueryExecutionId"]
 
-            task.arguments['hour_job']['queryid'] = task.id
+            if task.arguments.get('hour_job'):
+                task.arguments['hour_job']['queryid'] = task.id
 
-    def add_query(self, name, args):
+    def add_query(self, data, sql, hour_job):
         """
         Adds a query to Athena. Respects the maximum number of queries specified when the module was created.
-        Retries queries when they fail so only use when you are sure your syntax is correct!
+        Retries queries when they fail.
         Returns a query object
-        :param name: the name which will be logged when running this query
-        :param args: a dict contains all the task related info needed to pass in
+        :param data: the config data passed for running this query
+        :param sql: the sql template read from s3
+        :param hour job: a tuple with date_string and control_hour_job object
         :return:
         """
 
-        # if parquet is True and self.scp is None:
-        #     raise AthenaClientError(
-        #         "Cannot output in Parquet without a S3Csv2Parquet object")
+        task_name = data['controlKey'].split("/")[0]
+        date_string = hour_job[0]
+        control_hour_job = hour_job[1]
+        hour_string = str(control_hour_job["hour"])
 
-        if args['dropTableName']:
-            self.add_task(name=name,
-                          priority=0,
-                          args={"sql": f"DROP TABLE IF EXISTS {args['dropTableName']}",
-                                "output_location": "s3://aws-athena-query-results-462463595486-ap-southeast-2"})
+        control_hour_job["workgroup"] = data.get("workgroup")
 
-            # need clean up the files in the destination if outputing in the same path
+        output_location = f"""{data['resultsLocation']}{date_string.split("-")[0]}/{date_string.split("-")[1]}/{date_string.split("-")[2]}/{hour_string.zfill(2)}"""
 
-            self.s3.prefix = "/".join(
-                args["output_location"].replace("s3://", "").split("/")[1:-1])
-            files = list(self.s3.list_objects())
-            for f in files:
-                self.s3.delete(f)
-            self.s3.prefix = None
+        sql = sql.replace("<date>", date_string).replace("<hour>", hour_string)
 
-        query = self.add_task(name=name,
+        if data.get('parquet') and data['parquet'] != "false":
+            if "format='parquet'" in sql.lower():
+                raise AthenaClientError(
+                    "ERROR: SQL script is already creating table with parquet output. Config file cannot accept parquet again")
+
+            if not data.get('dropTableName'):
+                # raise AthenaClientError(
+                #     "Cannot output in Parquet without a drop table name")
+                logger.info(
+                    f"Creating a temp table temp.parquet_{task_name.replace('-','_')} for parquet file output")
+                self._add_drop_table_task(
+                    'temp.parquet_'+task_name.replace('-', '_'), task_name, output_location)
+
+            sql = f"""CREATE TABLE { data['dropTableName'] if data.get('dropTableName') else 'temp.parquet_'+task_name.replace('-','') }
+                WITH (
+                format='PARQUET',
+                parquet_compression = 'SNAPPY'
+                ) AS """+sql
+
+        # for cases when the script is creating table in parquet format but parquet in config is not true
+        # and when parquet in config is true, and also specify dropTableName in config
+        if data.get('dropTableName'):
+            self._add_drop_table_task(
+                data.get('dropTableName'), task_name, output_location)
+
+        args = {"sql": sql,
+                "output_location": output_location,
+                "hour_job": control_hour_job,
+                "date_string": date_string,
+                "parquet": data.get('parquet'),
+                "dropTableName": data.get("dropTableName"),
+                "encryptQueryResults": data.get("encryptQueryResults"),
+                "encryptionType": data.get("encryptionType"),
+                "encryptionKey": data.get("encryptionKey")
+                }
+
+        query = self.add_task(name=task_name,
                               priority=1,
                               args=args)
 
         return query
+
+    def _add_drop_table_task(self, table_name, task_name, output_location):
+        self.interleaved_priority = True
+        self.add_task(name=task_name,
+                      priority=0,
+                      args={"sql": f"DROP TABLE IF EXISTS {table_name}",
+                            "output_location": "s3://aws-athena-query-results-462463595486-ap-southeast-2"})
+
+        # need clean up the files in the destination if outputing in the same path
+
+        prefix = "/".join(output_location.replace("s3://",
+                                                  "").split("/")[1:-1])
+        files = list(self.control_s3.list_objects(prefix))
+        for f in files:
+            self.control_s3.delete(f)
 
     def wait_for_completion(self):
         """
@@ -170,8 +228,7 @@ class AthenaClient(TaskQueue):
         """
         try:
             super(AthenaClient, self).wait_for_completion()
-            # if self.scp is not None:
-            #     self.scp.wait_for_completion()
+
         except Exception as e:
             raise e
         finally:

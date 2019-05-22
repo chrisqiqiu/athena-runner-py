@@ -56,6 +56,7 @@ class S3(object):
         except Exception as e:
             self._logger.info(
                 "Could not get {} from S3 due to {}".format(key, e))
+            return None
         else:
             self._logger.info("Successfully get {} from S3".format(key))
         return key
@@ -75,10 +76,10 @@ class S3(object):
         else:
             self._logger.info("Successfully uploaded {} to S3".format(key))
 
-    def list_objects(self):
+    def list_objects(self, prefix):
         """Get a list of all keys in an S3 bucket."""
         keys = set()
-        kwargs = {'Bucket': self.bucket, 'Prefix': self.prefix}
+        kwargs = {'Bucket': self.bucket, 'Prefix': prefix}
         while True:
             resp = self._s3.list_objects_v2(**kwargs)
 
@@ -97,10 +98,10 @@ class S3(object):
         return keys
 
     def delete(self,  key):
-        self._logger.info("Deleting s3://{bucket}/{key}")
+        self._logger.info(f"Deleting s3://{self.bucket}/{key}")
         self._s3.delete_object(
             Bucket=self.bucket, Key=key)
-        self._logger.info("Successfully deleted s3://{bucket}/{key}")
+        self._logger.info(f"Successfully deleted s3://{self.bucket}/{key}")
 
 
 class ProgressPercentage(object):
