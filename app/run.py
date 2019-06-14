@@ -1,4 +1,4 @@
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 import os
 from s3 import S3
 
@@ -11,15 +11,23 @@ from itertools import chain
 from functools import partial
 from athena import AthenaClient
 
-load_dotenv()
+# load_dotenv()
 logger = setup_logger(__name__)
 slackBot = SlackNotification(__name__)
 
 
 def main():
-    logger.info(" [Athena Runner Step 1/5] read config file... ")
+    logger.info("Read config file for task list... ")
     # os.environ['CONTROLCONFIGPATH'] export "../configs/prod.json" to os.environ['CONTROLCONFIGPATH']
     data = Config(os.environ['CONTROLCONFIGPATH']).data
+
+    list(map(process_each_config, data['steps']))
+
+
+def process_each_config(data):
+
+    logger.info(" [Athena Runner Step 1/5] read config file... ")
+
     control_s3 = S3(bucket=data['controlBucket'])
 
     logger.info(" [Athena Runner Step 2/5] read control file... ")

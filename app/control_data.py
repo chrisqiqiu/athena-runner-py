@@ -29,7 +29,7 @@ class ControlData:
 
         new_hour_job = self._hour_job_dict(self.now.hour)
         new_day_job = self._day_job_dict(str(self.now.year), str(
-            self.now.month).zfill(2), str(self.now.day), [new_hour_job])
+            self.now.month), str(self.now.day), [new_hour_job])
 
         if self.control_dict is None or self.control_dict.get("datelist") is None or len(self.control_dict["datelist"]) == 0:
             logger.info(
@@ -70,7 +70,7 @@ class ControlData:
             date_to_add = self.today + \
                 datetime.timedelta(days=int(self.config_data["controlDays"]))
 
-            self.date_list = [self._day_job_dict(str(date_to_add.year), str(date_to_add.month).zfill(2), str(date_to_add.day), new_hour_jobs if self.config_data['appendHours'] and self.config_data['appendHours'] != "false" else [new_hour_job])
+            self.date_list = [self._day_job_dict(str(date_to_add.year), str(date_to_add.month), str(date_to_add.day), new_hour_jobs if self.config_data['appendHours'] and self.config_data['appendHours'] != "false" else [new_hour_job])
                               ]
         # else read in the existing date list, grab the last one and grow the list from it until it hits (today - controlDays) in config
         else:
@@ -84,8 +84,8 @@ class ControlData:
             while last_control_date <= (self.today + datetime.timedelta(days=int(self.config_data["controlDays"]))):
                 last_control_date = last_control_date + \
                     datetime.timedelta(days=1)
-                self.date_list.append(self._day_job_dict(str(last_control_date.year), str(last_control_date.month).zfill(
-                    2), str(last_control_date.day), new_hour_jobs if self.config_data['appendHours'] and self.config_data['appendHours'] != "false" else [new_hour_job]))
+                self.date_list.append(self._day_job_dict(str(last_control_date.year), str(last_control_date.month), str(
+                    last_control_date.day), new_hour_jobs if self.config_data['appendHours'] and self.config_data['appendHours'] != "false" else [new_hour_job]))
 
     def _hour_job_dict(self, hour):
         return {"hour": hour,
@@ -100,8 +100,8 @@ class ControlData:
     def _day_job_dict(self, year, month, day, hourlist):
         return {
             "year": year,
-            "month": month,
-            "day": day,
+            "month": month.zfill(2),
+            "day": day.zfill(2),
             "hourlist": hourlist
         }
 

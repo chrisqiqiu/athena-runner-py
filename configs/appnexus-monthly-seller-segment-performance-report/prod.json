@@ -1,0 +1,42 @@
+{
+    "steps": [
+        {
+            "database": "default",
+            "resultsLocation": "s3://athena-runner-ap-southeast-2-with-trigger/appnexus-monthly-seller-segment-performance-report/results/day_level_summary/",
+            "encryptQueryResults": "false",
+            "encryptionType": "",
+            "encryptionKey": "",
+            "controlBucket": "athena-runner-ap-southeast-2",
+            "controlKey": "appnexus-monthly-seller-segment-performance-report/control_1.json",
+            "queryBucket": "athena-runner-ap-southeast-2",
+            "queryKey": "appnexus-monthly-seller-segment-performance-report/query_1.sql",
+            "maxQueries": "4",
+            "controlDays": "-32",
+            "appendHours": "",
+            "timeoutMinutes": "55",
+            "sleepSeconds": "10",
+            "workgroup": "primary",
+            "dropTableName": "",
+            "parquet": ""
+        },
+        {
+            "database": "default",
+            "resultsLocation": "s3://athena-runner-ap-southeast-2-with-trigger/appnexus-monthly-seller-segment-performance-report/results/report_result/",
+            "encryptQueryResults": "false",
+            "encryptionType": "",
+            "encryptionKey": "",
+            "controlBucket": "athena-runner-ap-southeast-2",
+            "controlKey": "appnexus-monthly-seller-segment-performance-report/control_2.json",
+            "queryBucket": "athena-runner-ap-southeast-2",
+            "queryKey": "appnexus-monthly-seller-segment-performance-report/query_2.sql",
+            "maxQueries": "4",
+            "controlDays": "-32",
+            "appendHours": "",
+            "timeoutMinutes": "55",
+            "sleepSeconds": "10",
+            "workgroup": "primary",
+            "dropTableName": "",
+            "parquet": ""
+        }
+    ]
+}

@@ -1,0 +1,159 @@
+{
+    "Comment": "Dynamic ETL pipelines using Step function",
+    "StartAt": "Set_File_Transfer_To_Archive_Files",
+    "States": {
+        "Set_File_Transfer_To_Archive_Files": {
+            "Type": "Pass",
+            "Result": {
+                "cluster": "file-transfer",
+                "service": "arn:aws:ecs:ap-southeast-2:462463595486:service/file-transfer/AAM-Nuid-Segment",
+                "task_definition": "AAM-Nuid-Segment",
+                "config": "/app/configs/adobe-am-segments/adobe-am-segments-archive-prod.json"
+            },
+            "ResultPath": "$.info",
+            "Next": "Spin_Up_File_Transfer_To_Archive_Files"
+        },
+        "Spin_Up_File_Transfer_To_Archive_Files": {
+            "Type": "Task",
+            "InputPath": "$.info",
+            "Resource": "arn:aws:lambda:ap-southeast-2:462463595486:function:fargate-cluster-up",
+            "Next": "Check_File_Transfer_To_Archive_Files_Status"
+        },
+        "Check_File_Transfer_To_Archive_Files_Status": {
+            "Type": "Task",
+            "InputPath": "$",
+            "Resource": "arn:aws:lambda:ap-southeast-2:462463595486:function:state-change",
+            "TimeoutSeconds": 15,
+            "Next": "File_Transfer_To_Archive_Files_Completed?"
+        },
+        "File_Transfer_To_Archive_Files_Completed?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable": "$.number",
+                    "NumericEquals": 1,
+                    "Next": "Wait_File_Transfer_To_Archive_Files_To_Complete"
+                },
+                {
+                    "Variable": "$.number",
+                    "NumericEquals": 0,
+                    "Next": "Wait_20_Seconds_For_File_Transfer_To_Archive_Files"
+                }
+            ],
+            "Default": "Job Failed"
+        },
+        "Wait_File_Transfer_To_Archive_Files_To_Complete": {
+            "Type": "Wait",
+            "Seconds": 60,
+            "Next": "Check_File_Transfer_To_Archive_Files_Status"
+        },
+        "Wait_20_Seconds_For_File_Transfer_To_Archive_Files": {
+            "Type": "Wait",
+            "Seconds": 20,
+            "Next": "Set_File_Transfer_To_Download_Files"
+        },
+        "Set_File_Transfer_To_Download_Files": {
+            "Type": "Pass",
+            "Result": {
+                "cluster": "file-transfer",
+                "service": "arn:aws:ecs:ap-southeast-2:462463595486:service/file-transfer/AAM-Nuid-Segment",
+                "task_definition": "AAM-Nuid-Segment",
+                "config": "/app/configs/adobe-am-segments/adobe-am-segments-prod.json"
+            },
+            "ResultPath": "$.info",
+            "Next": "Spin_Up_File_Transfer_To_Download_Files"
+        },
+        "Spin_Up_File_Transfer_To_Download_Files": {
+            "Type": "Task",
+            "InputPath": "$.info",
+            "Resource": "arn:aws:lambda:ap-southeast-2:462463595486:function:fargate-cluster-up",
+            "Next": "Check_File_Transfer_To_Download_Files_Status"
+        },
+        "Check_File_Transfer_To_Download_Files_Status": {
+            "Type": "Task",
+            "InputPath": "$",
+            "Resource": "arn:aws:lambda:ap-southeast-2:462463595486:function:state-change",
+            "TimeoutSeconds": 15,
+            "Next": "File_Transfer_To_Download_Files_Completed?"
+        },
+        "File_Transfer_To_Download_Files_Completed?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable": "$.number",
+                    "NumericEquals": 1,
+                    "Next": "Wait_File_Transfer_To_Download_Files_To_Complete"
+                },
+                {
+                    "Variable": "$.number",
+                    "NumericEquals": 0,
+                    "Next": "Wait_20_Seconds_For_File_Transfer_To_Download_Files"
+                }
+            ],
+            "Default": "Job Failed"
+        },
+        "Wait_File_Transfer_To_Download_Files_To_Complete": {
+            "Type": "Wait",
+            "Seconds": 60,
+            "Next": "Check_File_Transfer_To_Download_Files_Status"
+        },
+        "Wait_20_Seconds_For_File_Transfer_To_Download_Files": {
+            "Type": "Wait",
+            "Seconds": 20,
+            "Next": "Set_Athena_Cluster"
+        },
+        "Set_Athena_Cluster": {
+            "Type": "Pass",
+            "Result": {
+                "cluster": "athena-runner-py",
+                "service": "arn:aws:ecs:ap-southeast-2:462463595486:service/athena-runner-py/aam-nuid-segment",
+                "task_definition": "aam-nuid-segment",
+                "config": "../configs/aam-nuid-segment/prod.json"
+            },
+            "ResultPath": "$.info",
+            "Next": "Spin_Up_Athena"
+        },
+        "Spin_Up_Athena": {
+            "Type": "Task",
+            "InputPath": "$.info",
+            "Resource": "arn:aws:lambda:ap-southeast-2:462463595486:function:fargate-cluster-up",
+            "Next": "Check_Athena_Cluster_Status"
+        },
+        "Check_Athena_Cluster_Status": {
+            "Type": "Task",
+            "InputPath": "$",
+            "Resource": "arn:aws:lambda:ap-southeast-2:462463595486:function:state-change",
+            "TimeoutSeconds": 15,
+            "Next": "Athena Complete?"
+        },
+        "Athena Complete?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable": "$.number",
+                    "NumericEquals": 1,
+                    "Next": "wait_athena_to_complete"
+                },
+                {
+                    "Variable": "$.number",
+                    "NumericEquals": 0,
+                    "Next": "Success"
+                }
+            ],
+            "Default": "Job Failed"
+        },
+        "wait_athena_to_complete": {
+            "Type": "Wait",
+            "Seconds": 60,
+            "Next": "Check_Athena_Cluster_Status"
+        },
+        "Success": {
+            "Type": "Succeed"
+        },
+        "Job Failed": {
+            "Type": "Fail",
+            "Cause": "AWS Transcribe Job Failed",
+            "Error": "DescribeJob returned FAILED"
+        }
+    }
+}
