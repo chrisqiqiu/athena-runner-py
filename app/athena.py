@@ -26,15 +26,14 @@ class AthenaClientError(Exception):
 
 class AthenaClient(TaskQueue):
     """
-    A client for AWS Athena that will create tables from S3 buckets (using AWS Glue)
-    and run queries against these tables.
+    A client for AWS Athena that run queries.
     """
 
     def __init__(self, region='ap-southeast-2', db='default', max_queries=3, max_retries=3, timeout_minutes=10,
                  sleep_seconds=10, workgroup='primary', control_s3=None, control_key=None, parquet=None, control_data=None):
         """
         Create an AthenaClient
-        :param region the AWS region to create the object, e.g. us-east-2
+        :param region the AWS region to create the object
         :param max_queries the maximum number of queries to run at any one time, defaults to three
         :type max_queries int
         :param max_retries the maximum number of times execution of the query will be retried on failure
@@ -87,7 +86,7 @@ class AthenaClient(TaskQueue):
             logger.info(
                 f"""Running drop table query {task.arguments['sql']}""")
 
-        if status["State"] == "RUNNING":
+        if status["State"] == "RUNNING" or status["State"] == "QUEUED":
             task.is_complete = False
         elif status["State"] == "SUCCEEDED":
             task.is_complete = True
@@ -213,11 +212,14 @@ class AthenaClient(TaskQueue):
                             "output_location": "s3://aws-athena-query-results-462463595486-ap-southeast-2"})
 
         # need clean up the files in the destination if outputing in the same path
-
+        print(f"Output location is : {output_location}")
         prefix = "/".join(output_location.replace("s3://",
                                                   "").split("/")[1:-1])
+
+        print(f"prefix is : {prefix}")
         files = list(self.control_s3.list_objects(prefix))
         for f in files:
+            print("Deleting file : " + str(f))
             self.control_s3.delete(f)
 
     def wait_for_completion(self):
