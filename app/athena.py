@@ -177,6 +177,7 @@ class AthenaClient(TaskQueue):
 
             sql = f"""CREATE TABLE { data['dropTableName'] if data.get('dropTableName') else 'temp.parquet_'+task_name.replace('-','') }
                 WITH (
+                { "partitioned_by = ARRAY[" + data.get('partition_by') +  "]," if data.get('partition_by') else "" } 
                 format='PARQUET',
                 parquet_compression = 'SNAPPY'
                 ) AS """+sql
